@@ -20,6 +20,10 @@ use File::Basename qw(basename);
 use Time::HiRes qw(gettimeofday tv_interval);
 binmode STDOUT, ':utf8';
 
+if (!defined($CGI::VERSION) || $CGI::VERSION < 4.08) {
+	eval 'sub CGI::multi_param { CGI::param(@_) }'
+}
+
 our $t0 = [ gettimeofday() ];
 our $number_of_git_cmds = 0;
 
@@ -27,7 +31,7 @@ BEGIN {
 	CGI->compile() if $ENV{'MOD_PERL'};
 }
 
-our $version = "2.1.2";
+our $version = "2.4.5";
 
 our ($my_url, $my_uri, $base_url, $path_info, $home_link);
 sub evaluate_uri {
@@ -871,7 +875,7 @@ sub evaluate_query_params {
 
 	while (my ($name, $symbol) = each %cgi_param_mapping) {
 		if ($symbol eq 'opt') {
-			$input_params{$name} = [ map { decode_utf8($_) } $cgi->param($symbol) ];
+			$input_params{$name} = [ map { decode_utf8($_) } $cgi->multi_param($symbol) ];
 		} else {
 			$input_params{$name} = decode_utf8($cgi->param($symbol));
 		}
@@ -1527,6 +1531,34 @@ sub is_valid_refname {
 	# check git-check-ref-format restrictions
 	is_valid_ref_format($input) or return undef;
 	return 1;
+}
+
+# take a string, and if it needs the current Sandstorm grain's
+# publicId added, execute the helper program and do a string
+# replace.
+sub with_publicid_added_if_needed {
+    my $str = shift;
+
+    if ($str =~ /__SANDSTORM_PUBLICID_MSG__/) {
+        my $cmdOutput = `/sandstorm/bin/getPublicId $ENV{'HTTP_X_SANDSTORM_SESSION_ID'}`;
+        $_ = $cmdOutput;
+        s/has automatically been published/will automatically be published/;
+        $cmdOutput = escapeHTML($_);
+        $_ = $str;
+        s/__SANDSTORM_PUBLICID_MSG__/$cmdOutput/;
+        return $_;
+    }
+
+    return $str;
+}
+
+# assume that file exists
+sub insert_file_sandstorm_substituted {
+	my $filename = shift;
+
+	open my $fd, '<', $filename;
+	print map { with_publicid_added_if_needed(to_utf8($_)) } <$fd>;
+	close $fd;
 }
 
 # decode sequences of octets in utf8 into Perl's internal form,
@@ -4100,7 +4132,7 @@ sub print_search_form {
 	if ($use_pathinfo) {
 		$action .= "/".esc_url($project);
 	}
-	print $cgi->startform(-method => "get", -action => $action) .
+	print $cgi->start_form(-method => "get", -action => $action) .
 	      "<div class=\"search\">\n" .
 	      (!$use_pathinfo &&
 	      $cgi->input({-name=>"p", -value=>$project, -type=>"hidden"}) . "\n") .
@@ -5510,7 +5542,7 @@ sub git_project_search_form {
 	}
 
 	print "<div class=\"projsearch\">\n";
-	print $cgi->startform(-method => 'get', -action => $my_uri) .
+	print $cgi->start_form(-method => 'get', -action => $my_uri) .
 	      $cgi->hidden(-name => 'a', -value => 'project_list')  . "\n";
 	print $cgi->hidden(-name => 'pf', -value => $project_filter). "\n"
 		if (defined $project_filter);
@@ -6451,7 +6483,7 @@ sub git_project_list {
 	git_header_html();
 	if (defined $home_text && -f $home_text) {
 		print "<div class=\"index_include\">\n";
-		insert_file($home_text);
+		insert_file_sandstorm_substituted($home_text);
 		print "</div>\n";
 	}
 

@@ -1,6 +1,6 @@
 #! /bin/sh
 
-set -ex
+set -xe
 
 if [ ! -h /var/repo.git/hooks/post-receive ]; then
   ln -s /post-receive-hook.sh /var/repo.git/hooks/post-receive
